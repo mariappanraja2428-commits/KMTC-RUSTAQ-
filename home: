@@ -1,5 +1,5 @@
-home: Scaffold(
-  body: Center(
-    child: Text('Hello Flutter Web!'),
-  ),
-),
+@override
+void initState() {
+  super.initState();
+  setState(() => _signedIn = true); // bypass Firebase login
+}
