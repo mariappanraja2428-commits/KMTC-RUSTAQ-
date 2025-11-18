@@ -1,0 +1,39 @@
+import 'package:flutter/material.dart';
+import 'dart:html' as html;
+
+class PhotoUpload extends StatefulWidget {
+  final String title;
+  const PhotoUpload({required this.title});
+
+  @override
+  State<PhotoUpload> createState() => _PhotoUploadState();
+}
+
+class _PhotoUploadState extends State<PhotoUpload> {
+  html.File? uploadedFile;
+  String? uploadedFileName;
+
+  void selectFile() {
+    html.FileUploadInputElement input = html.FileUploadInputElement();
+    input.accept = 'image/*';
+    input.click();
+    input.onChange.listen((event) {
+      final file = input.files!.first;
+      setState(() {
+        uploadedFile = file;
+        uploadedFileName = file.name;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        ElevatedButton(onPressed: selectFile, child: Text('Upload ${widget.title}')),
+        SizedBox(width: 10),
+        Text(uploadedFileName ?? 'No file selected'),
+      ],
+    );
+  }
+}
