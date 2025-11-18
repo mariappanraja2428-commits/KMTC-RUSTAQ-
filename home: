@@ -1,5 +1,1 @@
-@override
-void initState() {
-  super.initState();
-  setState(() => _signedIn = true); // bypass Firebase login
-}
+home: Scaffold(body: Center(child: Text('App Loaded!'))),
