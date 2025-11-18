@@ -1,0 +1,7 @@
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^2.24.2
+  firebase_storage: ^11.2.5
+  cloud_firestore: ^5.4.4
+  image_picker_for_web: ^3.0.0
