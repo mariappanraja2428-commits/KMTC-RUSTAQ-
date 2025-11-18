@@ -1,0 +1,15 @@
+records (collection)
+  └─ {recordId} (document)
+      ├ area: "RUSTAQ EMERGENCY"
+      ├ line: "OHL"
+      ├ size: "LT"
+      ├ material: "Conductor"
+      ├ meter: "15"
+      ├ txNo: "1411"
+      ├ place: "RUSTAQ SOUQ"
+      ├ beforeUrl: "https://..."
+      ├ afterUrl: "https://..."
+      ├ latitude: 23.5
+      ├ longitude: 57.9
+      ├ deleted: false
+      └ createdAt: Timestamp
