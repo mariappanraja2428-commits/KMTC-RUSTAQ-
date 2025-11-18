@@ -1,0 +1,21 @@
+import 'package:flutter/material.dart';
+import 'pages/landing_page.dart';
+
+void main() {
+  runApp(NamaRustaqApp());
+}
+
+class NamaRustaqApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'NAMA Rustaq',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: LandingPage(),
+    );
+  }
+}
