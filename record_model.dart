@@ -46,7 +46,7 @@ class RecordModel {
       latitude: (m['latitude'] ?? 0).toDouble(),
       longitude: (m['longitude'] ?? 0).toDouble(),
       deleted: m['deleted'] ?? false,
-      createdAt: (m['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: (m['createdAt'] as dynamic) is DateTime ? (m['createdAt'] as DateTime) : DateTime.now(),
     );
   }
 

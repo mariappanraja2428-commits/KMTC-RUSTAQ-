@@ -1,190 +1,142 @@
-import 'package:flutter/material.dart';
-import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xls;
-import 'package:pdf/widgets.dart' as pw;
-import 'package:pdf/pdf.dart';
 import 'dart:html' as html;
-
-class Record {
-  final String area;
-  final String line;
-  final String size;
-  final String material;
-  final String meter;
-  final String txNo;
-  final String place;
-  final String beforePhoto;
-  final String afterPhoto;
-
-  Record({
-    required this.area,
-    required this.line,
-    required this.size,
-    required this.material,
-    required this.meter,
-    required this.txNo,
-    required this.place,
-    required this.beforePhoto,
-    required this.afterPhoto,
-  });
-}
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'record_form_page.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class RecordsPage extends StatefulWidget {
+  const RecordsPage({Key? key}) : super(key: key);
+
   @override
   State<RecordsPage> createState() => _RecordsPageState();
 }
 
 class _RecordsPageState extends State<RecordsPage> {
-  // Mock data, replace with actual saved records
-  List<Record> records = [
-    Record(
-        area: 'RUSTAQ EMERGENCY',
-        line: 'OHL',
-        size: 'LT',
-        material: 'Conductor',
-        meter: '15',
-        txNo: '1411',
-        place: 'RUSTAQ SOUQ',
-        beforePhoto: 'Before.jpg',
-        afterPhoto: 'After.jpg'),
-    Record(
-        area: 'HAZAM EMERGENCY',
-        line: 'CABLE',
-        size: '11KVA',
-        material: 'Cable',
-        meter: '20',
-        txNo: '1412',
-        place: 'HAZAM PLACE',
-        beforePhoto: 'Before.jpg',
-        afterPhoto: 'After.jpg'),
-  ];
+  bool showOnlyActive = true;
 
-  void downloadExcel() {
-    final workbook = xls.Workbook();
-    final sheet = workbook.worksheets[0];
-
-    // Header row
-    sheet.getRangeByName('A1').setText('Area');
-    sheet.getRangeByName('B1').setText('Line');
-    sheet.getRangeByName('C1').setText('Size');
-    sheet.getRangeByName('D1').setText('Material');
-    sheet.getRangeByName('E1').setText('Meter');
-    sheet.getRangeByName('F1').setText('TX No');
-    sheet.getRangeByName('G1').setText('Place');
-    sheet.getRangeByName('H1').setText('Before Photo');
-    sheet.getRangeByName('I1').setText('After Photo');
-
-    for (int i = 0; i < records.length; i++) {
-      final r = records[i];
-      sheet.getRangeByIndex(i + 2, 1).setText(r.area);
-      sheet.getRangeByIndex(i + 2, 2).setText(r.line);
-      sheet.getRangeByIndex(i + 2, 3).setText(r.size);
-      sheet.getRangeByIndex(i + 2, 4).setText(r.material);
-      sheet.getRangeByIndex(i + 2, 5).setText(r.meter);
-      sheet.getRangeByIndex(i + 2, 6).setText(r.txNo);
-      sheet.getRangeByIndex(i + 2, 7).setText(r.place);
-      sheet.getRangeByIndex(i + 2, 8).setText(r.beforePhoto);
-      sheet.getRangeByIndex(i + 2, 9).setText(r.afterPhoto);
+  Stream<QuerySnapshot> _recordsStream() {
+    if (showOnlyActive) {
+      return FirebaseFirestore.instance.collection('records').where('deleted', isEqualTo: false).orderBy('createdAt', descending: true).snapshots();
+    } else {
+      return FirebaseFirestore.instance.collection('records').orderBy('createdAt', descending: true).snapshots();
     }
-
-    final bytes = workbook.saveAsStream();
-    workbook.dispose();
-
-    final blob = html.Blob([bytes], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute('download', 'records.xlsx')
-      ..click();
-    html.Url.revokeObjectUrl(url);
   }
 
-  void downloadPDF() async {
-    final pdf = pw.Document();
-    pdf.addPage(
-      pw.Page(
-        build: (pw.Context context) {
-          return pw.Column(
-              children: [
-                pw.Text('NAMA ELECTRICITY DISTRIBUTION COMPANY RUSTAQ', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
-                pw.SizedBox(height: 20),
-                pw.Table.fromTextArray(
-                  headers: ['Area', 'Line', 'Size', 'Material', 'Meter', 'TX No', 'Place', 'Before Photo', 'After Photo'],
-                  data: records.map((r) => [
-                    r.area,
-                    r.line,
-                    r.size,
-                    r.material,
-                    r.meter,
-                    r.txNo,
-                    r.place,
-                    r.beforePhoto,
-                    r.afterPhoto
-                  ]).toList(),
-                ),
-              ]
-          );
-        },
-      ),
-    );
+  Future<void> _softDelete(String id) async {
+    await FirebaseFirestore.instance.collection('records').doc(id).update({'deleted': true});
+  }
 
-    final bytes = await pdf.save();
-    final blob = html.Blob([bytes], 'application/pdf');
-    final url = html.Url.createObjectUrlFromBlob(blob);
-    final anchor = html.AnchorElement(href: url)
-      ..setAttribute('download', 'records.pdf')
-      ..click();
-    html.Url.revokeObjectUrl(url);
+  Future<void> _restore(String id) async {
+    await FirebaseFirestore.instance.collection('records').doc(id).update({'deleted': false});
+  }
+
+  Future<void> _permanentDelete(String id, String? beforeUrl, String? afterUrl) async {
+    try {
+      if (beforeUrl != null && beforeUrl.isNotEmpty) {
+        await FirebaseStorage.instance.refFromURL(beforeUrl).delete();
+      }
+      if (afterUrl != null && afterUrl.isNotEmpty) {
+        await FirebaseStorage.instance.refFromURL(afterUrl).delete();
+      }
+    } catch (e) {
+      debugPrint('Storage delete failed: \$e');
+    }
+    await FirebaseFirestore.instance.collection('records').doc(id).delete();
   }
 
   @override
   Widget build(BuildContext context) {
-    final teams = records.map((e) => e.area).toSet().toList();
-
     return Scaffold(
-      appBar: AppBar(title: Text('Records')),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                ElevatedButton(onPressed: downloadExcel, child: Text('Download Excel')),
-                SizedBox(width: 20),
-                ElevatedButton(onPressed: downloadPDF, child: Text('Download PDF')),
-              ],
-            ),
-            SizedBox(height: 20),
-            ...teams.map((team) {
-              final teamRecords = records.where((r) => r.area == team).toList();
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(team, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  DataTable(
-                    columns: const [
-                      DataColumn(label: Text('Line')),
-                      DataColumn(label: Text('Size')),
-                      DataColumn(label: Text('Material')),
-                      DataColumn(label: Text('Meter')),
-                      DataColumn(label: Text('TX No')),
-                      DataColumn(label: Text('Place')),
-                    ],
-                    rows: teamRecords.map((r) {
-                      return DataRow(cells: [
-                        DataCell(Text(r.line)),
-                        DataCell(Text(r.size)),
-                        DataCell(Text(r.material)),
-                        DataCell(Text(r.meter)),
-                        DataCell(Text(r.txNo)),
-                        DataCell(Text(r.place)),
-                      ]);
-                    }).toList(),
-                  ),
-                  SizedBox(height: 30),
-                ],
+      appBar: AppBar(
+        title: const Text('Records'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RecordFormPage())),
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text('New', style: TextStyle(color: Colors.white)),
+          ),
+          IconButton(
+            icon: Icon(showOnlyActive ? Icons.delete_outline : Icons.list),
+            tooltip: showOnlyActive ? 'Show all (including deleted)' : 'Show active only',
+            onPressed: () => setState(() => showOnlyActive = !showOnlyActive),
+          ),
+        ],
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _recordsStream(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final docs = snapshot.data!.docs;
+
+          final grouped = <String, List<QueryDocumentSnapshot>>{};
+          for (final d in docs) {
+            final area = d['area'] ?? 'Unknown';
+            grouped.putIfAbsent(area, () => []).add(d);
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: grouped.entries.map((entry) {
+              return ExpansionTile(
+                title: Text('${entry.key} (${entry.value.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                children: entry.value.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final deleted = data['deleted'] ?? false;
+                  return Card(
+                    color: deleted ? Colors.grey[200] : null,
+                    child: ListTile(
+                      leading: data['beforeUrl'] != null && data['beforeUrl'] != ''
+                          ? Image.network(data['beforeUrl'], width: 56, height: 56, fit: BoxFit.cover)
+                          : const SizedBox(width: 56, height: 56, child: Icon(Icons.image)),
+                      title: Text('${data['line'] ?? ''} • ${data['size'] ?? ''}'),
+                      subtitle: Text('${data['place'] ?? ''} • TX:${data['txNo'] ?? ''}'),
+                      trailing: Wrap(
+                        spacing: 6,
+                        children: [
+                          IconButton(
+                            tooltip: 'Open map',
+                            icon: const Icon(Icons.map),
+                            onPressed: () {
+                              final lat = (data['latitude'] ?? 0).toString();
+                              final lon = (data['longitude'] ?? 0).toString();
+                              final url = 'https://www.google.com/maps?q=$lat,$lon';
+                              html.window.open(url, '_blank');
+                            },
+                          ),
+                          IconButton(
+                            tooltip: 'Edit',
+                            icon: const Icon(Icons.edit),
+                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecordFormPage(recordId: doc.id))),
+                          ),
+                          if (!deleted)
+                            IconButton(
+                              tooltip: 'Delete (move to trash)',
+                              icon: const Icon(Icons.delete),
+                              onPressed: () => _softDelete(doc.id),
+                            )
+                          else
+                            IconButton(
+                              tooltip: 'Restore',
+                              icon: const Icon(Icons.restore_from_trash),
+                              onPressed: () => _restore(doc.id),
+                            ),
+                          IconButton(
+                            tooltip: 'View After',
+                            icon: const Icon(Icons.image_outlined),
+                            onPressed: () {
+                              final after = data['afterUrl'] ?? '';
+                              if (after.isNotEmpty) html.window.open(after, '_blank');
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
               );
             }).toList(),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

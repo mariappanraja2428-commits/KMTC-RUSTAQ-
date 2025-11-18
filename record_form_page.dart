@@ -1,13 +1,15 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:image_picker_for_web/image_picker_for_web.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
+import '../widgets/photo_upload.dart';
 
 class RecordFormPage extends StatefulWidget {
-  final String? recordId; // if editing, pass id
-  const RecordFormPage({this.recordId, Key? key}) : super(key: key);
+  final String? prefillArea;
+  final String? recordId;
+  const RecordFormPage({this.prefillArea, this.recordId, Key? key}) : super(key: key);
 
   @override
   State<RecordFormPage> createState() => _RecordFormPageState();
@@ -15,14 +17,6 @@ class RecordFormPage extends StatefulWidget {
 
 class _RecordFormPageState extends State<RecordFormPage> {
   final _formKey = GlobalKey<FormState>();
-  final picker = ImagePicker();
-  Uint8List? beforeBytes;
-  Uint8List? afterBytes;
-  String? beforeUrl;
-  String? afterUrl;
-  bool _saving = false;
-
-  // Form fields
   String area = 'RUSTAQ EMERGENCY';
   String line = 'OHL';
   String size = 'LT';
@@ -32,10 +26,16 @@ class _RecordFormPageState extends State<RecordFormPage> {
   final placeCtrl = TextEditingController();
   final latCtrl = TextEditingController();
   final lonCtrl = TextEditingController();
+  Uint8List? beforeBytes;
+  Uint8List? afterBytes;
+  String? beforeUrl;
+  String? afterUrl;
+  bool saving = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.prefillArea != null) area = widget.prefillArea!;
     if (widget.recordId != null) _loadExisting();
   }
 
@@ -58,37 +58,36 @@ class _RecordFormPageState extends State<RecordFormPage> {
     });
   }
 
-  Future<void> pickImage(bool isBefore) async {
-    final XFile? file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    setState(() => isBefore ? beforeBytes = bytes : afterBytes = bytes);
+  Future<void> pickImageAndSet(bool isBefore) async {
+    final bytes = await ImagePickerWeb.getImageAsBytes();
+    if (bytes == null) return;
+    setState(() {
+      if (isBefore) beforeBytes = bytes; else afterBytes = bytes;
+    });
   }
 
-  Future<String> _uploadBytes(Uint8List bytes, String path) async {
+  Future<String> _upload(Uint8List bytes, String path) async {
     final ref = FirebaseStorage.instance.ref().child(path);
-    final task = await ref.putData(bytes);
+    await ref.putData(bytes);
     return ref.getDownloadURL();
   }
 
-  Future<void> _saveRecord() async {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
-
+    setState(() => saving = true);
     try {
       final id = widget.recordId ?? const Uuid().v4();
-      String beforeDownload = beforeUrl ?? '';
-      String afterDownload = afterUrl ?? '';
+      String bUrl = beforeUrl ?? '';
+      String aUrl = afterUrl ?? '';
 
       if (beforeBytes != null) {
-        beforeDownload = await _uploadBytes(beforeBytes!, 'records/$id/before.jpg');
+        bUrl = await _upload(beforeBytes!, 'records/$id/before.jpg');
       }
       if (afterBytes != null) {
-        afterDownload = await _uploadBytes(afterBytes!, 'records/$id/after.jpg');
+        aUrl = await _upload(afterBytes!, 'records/$id/after.jpg');
       }
 
-      final docRef = FirebaseFirestore.instance.collection('records').doc(id);
-      await docRef.set({
+      await FirebaseFirestore.instance.collection('records').doc(id).set({
         'area': area,
         'line': line,
         'size': size,
@@ -96,8 +95,8 @@ class _RecordFormPageState extends State<RecordFormPage> {
         'meter': meterCtrl.text,
         'txNo': txCtrl.text,
         'place': placeCtrl.text,
-        'beforeUrl': beforeDownload,
-        'afterUrl': afterDownload,
+        'beforeUrl': bUrl,
+        'afterUrl': aUrl,
         'latitude': double.tryParse(latCtrl.text) ?? 0.0,
         'longitude': double.tryParse(lonCtrl.text) ?? 0.0,
         'deleted': false,
@@ -105,13 +104,12 @@ class _RecordFormPageState extends State<RecordFormPage> {
       }, SetOptions(merge: true));
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Record saved')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
       Navigator.of(context).pop();
     } catch (e) {
-      debugPrint('Save error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Save failed')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save failed: \$e')));
     } finally {
-      setState(() => _saving = false);
+      setState(() => saving = false);
     }
   }
 
@@ -131,9 +129,6 @@ class _RecordFormPageState extends State<RecordFormPage> {
       'RUSTAQ EMERGENCY','HAZAM EMERGENCY','HOQAIN EMERGENCY','KHAFDI EMERGENCY','AWABI EMERGENCY',
       'RUSTAQ MAINTENANCES - 1','HAZAM MAINTENANCES - 2','RUSTAQ ASSET SECURITY - 1','HAZAM ASSET SECURITY - 1'
     ];
-    final lines = ['OHL','CABLE','MFP CLEARANCE'];
-    final sizes = ['LT','11KVA','33KVA'];
-    final materials = ['Conductor','Cable','MFP','Foundation'];
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.recordId == null ? 'New Record' : 'Edit Record')),
@@ -149,85 +144,41 @@ class _RecordFormPageState extends State<RecordFormPage> {
                 onChanged: (v) => setState(() => area = v!),
                 decoration: const InputDecoration(labelText: 'Area'),
               ),
-              Row(children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: line,
-                    items: lines.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-                    onChanged: (v) => setState(() => line = v!),
-                    decoration: const InputDecoration(labelText: 'Line'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: size,
-                    items: sizes.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-                    onChanged: (v) => setState(() => size = v!),
-                    decoration: const InputDecoration(labelText: 'Size'),
-                  ),
-                ),
-              ]),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: line,
+                items: ['OHL','CABLE','MFP CLEARANCE'].map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+                onChanged: (v) => setState(() => line = v!),
+                decoration: const InputDecoration(labelText: 'Line'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: size,
+                items: ['LT','11KVA','33KVA'].map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+                onChanged: (v) => setState(() => size = v!),
+                decoration: const InputDecoration(labelText: 'Size'),
+              ),
+              const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: material,
-                items: materials.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+                items: ['Conductor','Cable','MFP','Foundation'].map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
                 onChanged: (v) => setState(() => material = v!),
                 decoration: const InputDecoration(labelText: 'Material'),
               ),
               TextFormField(controller: meterCtrl, decoration: const InputDecoration(labelText: 'Meter (mtr)'), keyboardType: TextInputType.number),
               TextFormField(controller: txCtrl, decoration: const InputDecoration(labelText: 'TX No')),
               TextFormField(controller: placeCtrl, decoration: const InputDecoration(labelText: 'Place')),
-              const SizedBox(height: 8),
               Row(children: [
                 Expanded(child: TextFormField(controller: latCtrl, decoration: const InputDecoration(labelText: 'Latitude'))),
                 const SizedBox(width: 8),
                 Expanded(child: TextFormField(controller: lonCtrl, decoration: const InputDecoration(labelText: 'Longitude'))),
               ]),
-              const SizedBox(height: 6),
-              ElevatedButton(
-                onPressed: () {
-                  // Quick helper: open Google Maps in a new tab to pick coordinate manually
-                  final url = 'https://www.google.com/maps';
-                  // using dart:html would be web-only; safe to open via launch or window.open
-                  // we use window.open only on web:
-                  // ignore: avoid_web_libraries_in_flutter
-                  import 'dart:html' as html; // placed inline to remind — move to top if used
-                },
-                child: const Text('Open Google Maps to pick location'),
-              ),
               const SizedBox(height: 12),
-
-              // Photo pickers
-              Row(
-                children: [
-                  ElevatedButton(onPressed: () => pickImage(true), child: const Text('Select Before Photo')),
-                  const SizedBox(width: 8),
-                  if (beforeBytes != null)
-                    SizedBox(height: 80, width: 80, child: Image.memory(beforeBytes!, fit: BoxFit.cover))
-                  else if (beforeUrl != null && beforeUrl!.isNotEmpty)
-                    SizedBox(height: 80, width: 80, child: Image.network(beforeUrl!, fit: BoxFit.cover))
-                ],
-              ),
+              PhotoUpload(title: 'Before', onPicked: (b) => beforeBytes = b, existingUrl: beforeUrl),
               const SizedBox(height: 8),
-              Row(
-                children: [
-                  ElevatedButton(onPressed: () => pickImage(false), child: const Text('Select After Photo')),
-                  const SizedBox(width: 8),
-                  if (afterBytes != null)
-                    SizedBox(height: 80, width: 80, child: Image.memory(afterBytes!, fit: BoxFit.cover))
-                  else if (afterUrl != null && afterUrl!.isNotEmpty)
-                    SizedBox(height: 80, width: 80, child: Image.network(afterUrl!, fit: BoxFit.cover))
-                ],
-              ),
-
-              const SizedBox(height: 20),
-              _saving
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton.icon(
-                      onPressed: _saveRecord,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Save Record'),
-                    ),
+              PhotoUpload(title: 'After', onPicked: (b) => afterBytes = b, existingUrl: afterUrl),
+              const SizedBox(height: 18),
+              saving ? const CircularProgressIndicator() : ElevatedButton.icon(onPressed: _save, icon: const Icon(Icons.save), label: const Text('Save Record')),
             ],
           ),
         ),
